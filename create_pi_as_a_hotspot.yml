@@ -119,7 +119,7 @@
         in_interface: wlan1
         out_interface: wlan0
         jump: ACCEPT
-    
+
     - name: Allow established connections
       iptables:
         chain: FORWARD
