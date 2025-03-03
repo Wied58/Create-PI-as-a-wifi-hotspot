@@ -10,6 +10,7 @@
           - iw
           - iproute2
           - systemd-resolved
+          - iptables-persistent
         state: present
         update_cache: yes
 
