@@ -14,6 +14,9 @@
         state: present
         update_cache: yes
 
+    - name: Unmask and enable hostapd service
+      command: systemctl unmask hostapd
+
     - name: Enable systemd-networkd and systemd-resolved
       systemd:
         name: "{{ item }}"
