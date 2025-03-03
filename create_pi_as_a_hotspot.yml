@@ -1,6 +1,6 @@
 ---
 - name: Configure Raspberry Pi as a Wi-Fi Hotspot
-  hosts: raspberrypi
+  hosts: all
   become: yes
   tasks:
     - name: Install required packages
