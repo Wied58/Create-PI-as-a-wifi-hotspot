@@ -10,7 +10,6 @@
           - dnsmasq
           - iw
           - iproute2
-          - systemd-networkd
           - systemd-resolved
         state: present
         update_cache: yes
