@@ -1,13 +1,12 @@
 ---
 - name: Configure Raspberry Pi as a Wi-Fi Hotspot
-  hosts: all
+  hosts: raspberrypi
   become: yes
   tasks:
     - name: Install required packages
       apt:
         name:
           - hostapd
-          - dnsmasq
           - iw
           - iproute2
           - systemd-resolved
@@ -36,7 +35,7 @@
           [Network]
           DHCP=ipv4
 
-    - name: Configure wlan1 as a static IP for the hotspot
+    - name: Configure wlan1 as a static IP with systemd-networkd DHCP server
       copy:
         dest: /etc/systemd/network/30-wlan1.network
         content: |
@@ -47,12 +46,10 @@
           Address=192.168.50.1/24
           DHCPServer=yes
 
-    - name: Configure DHCP server on wlan1
-      copy:
-        dest: /etc/dnsmasq.conf
-        content: |
-          interface=wlan1
-          dhcp-range=192.168.50.10,192.168.50.100,12h
+          [DHCPServer]
+          PoolOffset=10
+          PoolSize=90
+          EmitDNS=yes
 
     - name: Configure hostapd
       copy:
@@ -86,6 +83,5 @@
       loop:
         - systemd-networkd
         - systemd-resolved
-        - dnsmasq
         - hostapd
 
