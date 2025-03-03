@@ -120,15 +120,15 @@
         out_interface: wlan0
         jump: ACCEPT
 
-    - name: Allow established connections
-      iptables:
-        chain: FORWARD
-        in_interface: wlan0
-        out_interface: wlan1
-        match: state
-        #state: RELATED,ESTABLISHED
-        state: present
-        jump: ACCEPT
+#    - name: Allow established connections
+#      iptables:
+#        chain: FORWARD
+#        in_interface: wlan0
+#        out_interface: wlan1
+#        match: state
+#        #state: RELATED,ESTABLISHED
+#        state: present
+#        jump: ACCEPT
     
     - name: Save iptables rules
       command: netfilter-persistent save
