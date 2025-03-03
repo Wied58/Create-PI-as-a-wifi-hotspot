@@ -75,6 +75,43 @@
         regexp: '^#?DAEMON_CONF=' 
         line: 'DAEMON_CONF="/etc/hostapd/hostapd.conf"'
 
+# Start NAT
+
+    - name: Enable IP forwarding
+      sysctl:
+        name: net.ipv4.ip_forward
+        value: '1'
+        state: present
+        sysctl_set: yes
+        reload: yes
+    
+    - name: Set up NAT for wlan1 to wlan0
+      iptables:
+        table: nat
+        chain: POSTROUTING
+        jump: MASQUERADE
+        out_interface: wlan0
+    
+    - name: Allow forwarding from wlan1 to wlan0
+      iptables:
+        chain: FORWARD
+        in_interface: wlan1
+        out_interface: wlan0
+        jump: ACCEPT
+    
+    - name: Allow established connections
+      iptables:
+        chain: FORWARD
+        in_interface: wlan0
+        out_interface: wlan1
+        match: state
+        state: RELATED,ESTABLISHED
+        jump: ACCEPT
+    
+    - name: Save iptables rules
+      command: netfilter-persistent save
+
+## END Nat 
     - name: Enable and start services
       systemd:
         name: "{{ item }}"
