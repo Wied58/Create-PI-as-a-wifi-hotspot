@@ -126,7 +126,8 @@
         in_interface: wlan0
         out_interface: wlan1
         match: state
-        state: RELATED,ESTABLISHED
+        #state: RELATED,ESTABLISHED
+        #state: present
         jump: ACCEPT
     
     - name: Save iptables rules
