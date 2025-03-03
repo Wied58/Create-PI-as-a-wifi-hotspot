@@ -25,6 +25,26 @@
         - systemd-networkd
         - systemd-resolved
 
+## force wlan1 to AP
+
+    - name: Disable WPA supplicant for wlan1
+      file:
+        path: "/etc/systemd/system/wpa_supplicant@wlan1.service"
+        state: absent
+
+    - name: Create udev rule for Persistent AP Mode on wlan1
+      copy:
+        dest: /etc/udev/rules.d/99-wlan1-persistent.rules
+        content: |
+          SUBSYSTEM=="net", ACTION=="add", ATTR{address}=="40:a5:ef:0c:9a:cd", NAME="wlan1"
+          SUBSYSTEM=="net", ACTION=="add", KERNEL=="wlan1", RUN+="/usr/sbin/iw dev wlan1 set type __ap"
+
+    - name: Reload udev rules
+      command: udevadm control --reload-rules
+
+## end force wlan1 to AP
+
+
     - name: Configure wlan0 to connect to home Wi-Fi (dhclient)
       copy:
         dest: /etc/systemd/network/25-wlan0.network
