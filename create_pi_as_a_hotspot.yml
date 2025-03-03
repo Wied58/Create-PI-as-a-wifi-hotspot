@@ -1,0 +1,89 @@
+---
+- name: Configure Raspberry Pi as a Wi-Fi Hotspot
+  hosts: raspberrypi
+  become: yes
+  tasks:
+    - name: Install required packages
+      apt:
+        name:
+          - hostapd
+          - dnsmasq
+          - iw
+          - iproute2
+          - systemd-networkd
+          - systemd-resolved
+        state: present
+        update_cache: yes
+
+    - name: Enable systemd-networkd and systemd-resolved
+      systemd:
+        name: "{{ item }}"
+        enabled: yes
+        state: started
+      loop:
+        - systemd-networkd
+        - systemd-resolved
+
+    - name: Configure wlan0 to connect to home Wi-Fi (dhclient)
+      copy:
+        dest: /etc/systemd/network/25-wlan0.network
+        content: |
+          [Match]
+          Name=wlan0
+
+          [Network]
+          DHCP=ipv4
+
+    - name: Configure wlan1 as a static IP for the hotspot
+      copy:
+        dest: /etc/systemd/network/30-wlan1.network
+        content: |
+          [Match]
+          Name=wlan1
+
+          [Network]
+          Address=192.168.50.1/24
+          DHCPServer=yes
+
+    - name: Configure DHCP server on wlan1
+      copy:
+        dest: /etc/dnsmasq.conf
+        content: |
+          interface=wlan1
+          dhcp-range=192.168.50.10,192.168.50.100,12h
+
+    - name: Configure hostapd
+      copy:
+        dest: /etc/hostapd/hostapd.conf
+        content: |
+          interface=wlan1
+          driver=nl80211
+          ssid=RaspberryPi-Hotspot
+          hw_mode=g
+          channel=7
+          wmm_enabled=0
+          macaddr_acl=0
+          auth_algs=1
+          ignore_broadcast_ssid=0
+          wpa=2
+          wpa_passphrase=YourSecurePassword
+          wpa_key_mgmt=WPA-PSK
+          rsn_pairwise=CCMP
+
+    - name: Set hostapd configuration path
+      lineinfile:
+        path: /etc/default/hostapd
+        regexp: '^#?DAEMON_CONF=' 
+        line: 'DAEMON_CONF="/etc/hostapd/hostapd.conf"'
+
+    - name: Enable and start services
+      systemd:
+        name: "{{ item }}"
+        enabled: yes
+        state: started
+      loop:
+        - systemd-networkd
+        - systemd-resolved
+        - dnsmasq
+        - hostapd
+
