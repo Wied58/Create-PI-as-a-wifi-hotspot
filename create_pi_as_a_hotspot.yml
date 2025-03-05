@@ -26,8 +26,7 @@
         - systemd-networkd
         - systemd-resolved
 
-## force wlan1 to AP
-
+    # Force wlan1 to AP mode
     - name: Disable WPA supplicant for wlan1
       file:
         path: "/etc/systemd/system/wpa_supplicant@wlan1.service"
@@ -38,14 +37,36 @@
         dest: /etc/udev/rules.d/99-wlan1-persistent.rules
         content: |
           SUBSYSTEM=="net", ACTION=="add", ATTR{address}=="40:a5:ef:0c:9a:cd", NAME="wlan1"
-          SUBSYSTEM=="net", ACTION=="add", KERNEL=="wlan1", RUN+="/usr/sbin/iw dev wlan1 set type __ap"
+          SUBSYSTEM=="net", ACTION=="add", KERNEL=="wlan1", RUN+="/bin/bash -c 'sleep 2; /usr/sbin/iw dev wlan1 set type __ap'"
 
     - name: Reload udev rules
       command: udevadm control --reload-rules
 
-
     - name: Trigger udev rule application
       command: udevadm trigger --subsystem-match=net
+
+    - name: Create systemd service to force wlan1 AP mode at boot
+      copy:
+        dest: /etc/systemd/system/force-wlan1-ap.service
+        content: |
+          [Unit]
+          Description=Force wlan1 to AP mode
+          After=network-pre.target
+          Wants=network-pre.target
+
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/sbin/iw dev wlan1 set type __ap
+          RemainAfterExit=yes
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Enable and start force-wlan1-ap service
+      systemd:
+        name: force-wlan1-ap
+        enabled: yes
+        state: started
 
     - name: Ensure override directory for hostapd exists
       file:
@@ -66,9 +87,7 @@
         name: hostapd
         state: restarted
 
-## end force wlan1 to AP
-
-
+    # Configure wlan0 for internet access
     - name: Configure wlan0 to connect to home Wi-Fi (dhclient)
       copy:
         dest: /etc/systemd/network/25-wlan0.network
@@ -79,7 +98,8 @@
           [Network]
           DHCP=ipv4
 
-    - name: Configure wlan1 as a static IP with systemd-networkd DHCP server
+    # Configure wlan1 with a static IP but no DHCP server
+    - name: Configure wlan1 with static IP (No DHCP)
       copy:
         dest: /etc/systemd/network/30-wlan1.network
         content: |
@@ -88,12 +108,6 @@
 
           [Network]
           Address=192.168.50.1/24
-          DHCPServer=yes
-
-          [DHCPServer]
-          PoolOffset=10
-          PoolSize=90
-          EmitDNS=yes
 
     - name: Configure hostapd
       copy:
@@ -119,8 +133,7 @@
         regexp: '^#?DAEMON_CONF=' 
         line: 'DAEMON_CONF="/etc/hostapd/hostapd.conf"'
 
-# Start NAT
-
+    # Enable NAT
     - name: Enable IP forwarding
       sysctl:
         name: net.ipv4.ip_forward
@@ -128,14 +141,14 @@
         state: present
         sysctl_set: yes
         reload: yes
-    
+
     - name: Set up NAT for wlan1 to wlan0
       iptables:
         table: nat
         chain: POSTROUTING
         jump: MASQUERADE
         out_interface: wlan0
-    
+
     - name: Allow forwarding from wlan1 to wlan0
       iptables:
         chain: FORWARD
@@ -143,20 +156,9 @@
         out_interface: wlan0
         jump: ACCEPT
 
-#    - name: Allow established connections
-#      iptables:
-#        chain: FORWARD
-#        in_interface: wlan0
-#        out_interface: wlan1
-#        match: state
-#        #state: RELATED,ESTABLISHED
-#        state: present
-#        jump: ACCEPT
-    
     - name: Save iptables rules
       command: netfilter-persistent save
 
-## END Nat 
     - name: Enable and start services
       systemd:
         name: "{{ item }}"
@@ -166,4 +168,5 @@
         - systemd-networkd
         - systemd-resolved
         - hostapd
+        - force-wlan1-ap
 
