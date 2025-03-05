@@ -47,6 +47,12 @@
     - name: Trigger udev rule application
       command: udevadm trigger --subsystem-match=net
 
+    - name: Ensure override directory for hostapd exists
+      file:
+        path: /etc/systemd/system/hostapd.service.d
+        state: directory
+        mode: '0755'
+
     - name: Create systemd override for hostapd to restart when wlan1 appears
       copy:
         dest: /etc/systemd/system/hostapd.service.d/override.conf
