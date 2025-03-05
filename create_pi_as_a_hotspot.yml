@@ -1,95 +1,59 @@
 ---
-- name: Configure Raspberry Pi WiFi hotspot
+- name: Setup Raspberry Pi as AP with dnsmasq
   hosts: localhost
   become: yes
   tasks:
+    - name: Stop and disable systemd-resolved to free port 53
+      systemd:
+        name: systemd-resolved
+        state: stopped
+        enabled: no
 
-    # Ensure required packages are installed
     - name: Install dnsmasq
       apt:
         name: dnsmasq
         state: present
 
-    # Install hostapd if not already installed
-    - name: Install hostapd
-      apt:
-        name: hostapd
-        state: present
-
-    # Configure hostapd for wlan1
-    - name: Configure hostapd
-      copy:
-        dest: /etc/hostapd/hostapd.conf
-        content: |
-          interface=wlan1
-          driver=nl80211
-          ssid=RaspberryPi-Hotspot
-          hw_mode=g
-          channel=7
-          wmm_enabled=0
-          macaddr_acl=0
-          auth_algs=1
-          ignore_broadcast_ssid=0
-          wpa=2
-          wpa_passphrase=YourSecurePassword
-          wpa_key_mgmt=WPA-PSK
-          rsn_pairwise=CCMP
-      notify: restart hostapd
-
-    # Configure systemd-networkd for wlan1 static IP
-    - name: Configure systemd-networkd for wlan1 static IP
-      copy:
-        dest: /etc/systemd/network/30-wlan1.network
-        content: |
-          [Match]
-          Name=wlan1
-
-          [Network]
-          Address=192.168.50.1/24
-          # Disable DHCPServer here
-          # DHCPServer=yes
-
-    # Install and configure dnsmasq
-    - name: Configure dnsmasq for DHCP on wlan1
+    - name: Configure dnsmasq for DHCP
       copy:
         dest: /etc/dnsmasq.conf
         content: |
           interface=wlan1
           dhcp-range=192.168.50.10,192.168.50.100,12h
-          dhcp-option=3,192.168.50.1  # Gateway
-          dhcp-option=6,192.168.50.1  # DNS
+          dhcp-option=3,192.168.50.1
+          dhcp-option=6,192.168.50.1
+          domain-needed
+          bogus-priv
+          no-resolv
+          local=/local/
+          server=8.8.8.8
+          server=8.8.4.4
 
-    # Enable and start dnsmasq
-    - name: Enable and start dnsmasq
+    - name: Restart dnsmasq to apply changes
+      systemd:
+        name: dnsmasq
+        state: restarted
+
+    - name: Enable dnsmasq to start at boot
       systemd:
         name: dnsmasq
         enabled: yes
+
+    - name: Start hostapd
+      systemd:
+        name: hostapd
         state: started
+        enabled: yes
 
-    # Disable systemd-networkd DHCP server
-    - name: Disable systemd-networkd DHCP server
-      lineinfile:
-        path: /etc/systemd/network/30-wlan1.network
-        regexp: '^DHCPServer='
-        line: '#DHCPServer=yes'
-
-    # Restart systemd-networkd to apply changes
-    - name: Restart systemd-networkd
+    - name: Restart networkd to apply network settings
       systemd:
         name: systemd-networkd
         state: restarted
 
-    # Ensure hostapd starts
-    - name: Start hostapd service
-      systemd:
-        name: hostapd
-        enabled: yes
-        state: started
-
-  handlers:
-    # Restart hostapd after configuration change
-    - name: restart hostapd
-      systemd:
-        name: hostapd
-        state: restarted
+    - name: Ensure wlan1 is configured correctly
+      shell: |
+        ip addr show wlan1
+        ip link set wlan1 up
+        ip addr add 192.168.50.1/24 dev wlan1
+        systemctl restart systemd-networkd
 
