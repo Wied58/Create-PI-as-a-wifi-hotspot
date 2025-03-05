@@ -1,6 +1,6 @@
 ---
 - name: Configure Raspberry Pi WiFi hotspot
-  hosts: raspberrypi
+  hosts: localhost
   become: yes
   tasks:
 
