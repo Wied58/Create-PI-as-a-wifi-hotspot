@@ -43,6 +43,23 @@
     - name: Reload udev rules
       command: udevadm control --reload-rules
 
+
+    - name: Trigger udev rule application
+      command: udevadm trigger --subsystem-match=net
+
+    - name: Create systemd override for hostapd to restart when wlan1 appears
+      copy:
+        dest: /etc/systemd/system/hostapd.service.d/override.conf
+        content: |
+          [Unit]
+          Requires=sys-subsystem-net-devices-wlan1.device
+          After=sys-subsystem-net-devices-wlan1.device
+
+    - name: Restart hostapd to apply AP mode
+      systemd:
+        name: hostapd
+        state: restarted
+
 ## end force wlan1 to AP
 
 
