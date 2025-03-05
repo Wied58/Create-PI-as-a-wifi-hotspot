@@ -1,59 +1,97 @@
 ---
-- name: Setup Raspberry Pi as AP with dnsmasq
+- name: Set up Wi-Fi hotspot on Raspberry Pi
   hosts: localhost
   become: yes
   tasks:
-    - name: Stop and disable systemd-resolved to free port 53
-      systemd:
-        name: systemd-resolved
-        state: stopped
-        enabled: no
-
-    - name: Install dnsmasq
+    - name: Install necessary packages
       apt:
-        name: dnsmasq
+        name:
+          - dnsmasq
+          - hostapd
+          - iptables
         state: present
+        update_cache: yes
+
+    - name: Enable IP forwarding
+      sysctl:
+        name: net.ipv4.ip_forward
+        value: "1"
+        state: present
+        reload: yes
+
+    - name: Set up iptables for NAT
+      ufw:
+        rule: allow
+        name: "OpenSSH"
+    
+    - name: Create iptables NAT rule for wlan1
+      command: iptables -t nat -A POSTROUTING -o wlan0 -j MASQUERADE
+      ignore_errors: yes
+
+    - name: Save iptables configuration
+      command: sh -c "iptables-save > /etc/iptables/rules.v4"
 
     - name: Configure dnsmasq for DHCP
       copy:
         dest: /etc/dnsmasq.conf
         content: |
           interface=wlan1
-          dhcp-range=192.168.50.10,192.168.50.100,12h
+          dhcp-range=192.168.50.10,192.168.50.50,12h
           dhcp-option=3,192.168.50.1
-          dhcp-option=6,192.168.50.1
-          domain-needed
-          bogus-priv
-          no-resolv
-          local=/local/
-          server=8.8.8.8
-          server=8.8.4.4
+          dhcp-option=6,8.8.8.8
+          address=/test/192.168.50.1
 
-    - name: Restart dnsmasq to apply changes
-      systemd:
-        name: dnsmasq
-        state: restarted
-
-    - name: Enable dnsmasq to start at boot
+    - name: Enable and start dnsmasq
       systemd:
         name: dnsmasq
         enabled: yes
+        state: started
 
-    - name: Start hostapd
+    - name: Configure hostapd for access point
+      copy:
+        dest: /etc/hostapd/hostapd.conf
+        content: |
+          interface=wlan1
+          driver=nl80211
+          ssid=Pi_Hotspot
+          hw_mode=g
+          channel=7
+          macaddr_acl=0
+          auth_algs=1
+          wpa=2
+          wpa_passphrase=raspberry
+          wpa_key_mgmt=WPA2-PSK
+          ieee80211n=1
+          country=US
+
+    - name: Configure hostapd default config
+      copy:
+        dest: /etc/default/hostapd
+        content: |
+          DAEMON_CONF="/etc/hostapd/hostapd.conf"
+
+    - name: Enable and start hostapd
       systemd:
         name: hostapd
-        state: started
         enabled: yes
+        state: started
 
-    - name: Restart networkd to apply network settings
+    - name: Enable systemd network interfaces
+      copy:
+        dest: /etc/systemd/network/10-wlan1.network
+        content: |
+          [Network]
+          DHCP=yes
+
+    - name: Enable systemd network interfaces for wlan0
+      copy:
+        dest: /etc/systemd/network/10-wlan0.network
+        content: |
+          [Network]
+          DHCP=yes
+
+    - name: Restart systemd-networkd to apply changes
       systemd:
         name: systemd-networkd
         state: restarted
-
-    - name: Ensure wlan1 is configured correctly
-      shell: |
-        ip addr show wlan1
-        ip link set wlan1 up
-        ip addr add 192.168.50.1/24 dev wlan1
-        systemctl restart systemd-networkd
 
