@@ -1,6 +1,6 @@
 ---
 - name: Set up Wi-Fi hotspot on Raspberry Pi
-  hosts: localhost
+  hosts: raspberrypi
   become: yes
   tasks:
     - name: Install necessary packages
@@ -9,6 +9,7 @@
           - dnsmasq
           - hostapd
           - iptables
+          - iptables-persistent
         state: present
         update_cache: yes
 
@@ -19,17 +20,14 @@
         state: present
         reload: yes
 
-    - name: Set up iptables for NAT
-      ufw:
-        rule: allow
-        name: "OpenSSH"
-    
-    - name: Create iptables NAT rule for wlan1
+    - name: Set up iptables for NAT (internet sharing from wlan0 to wlan1)
       command: iptables -t nat -A POSTROUTING -o wlan0 -j MASQUERADE
-      ignore_errors: yes
 
-    - name: Save iptables configuration
-      command: sh -c "iptables-save > /etc/iptables/rules.v4"
+    - name: Allow traffic forwarding from wlan1 to wlan0
+      command: iptables -A FORWARD -i wlan1 -o wlan0 -j ACCEPT
+
+    - name: Save iptables rules
+      shell: iptables-save > /etc/iptables/rules.v4
 
     - name: Configure dnsmasq for DHCP
       copy:
@@ -60,7 +58,7 @@
           auth_algs=1
           wpa=2
           wpa_passphrase=raspberry
-          wpa_key_mgmt=WPA2-PSK
+          wpa_key_mgmt=WPA-PSK
           ieee80211n=1
           country=US
 
@@ -76,19 +74,26 @@
         enabled: yes
         state: started
 
-    - name: Enable systemd network interfaces
+    - name: Configure systemd-networkd for wlan1 (hotspot)
       copy:
         dest: /etc/systemd/network/10-wlan1.network
         content: |
-          [Network]
-          DHCP=yes
+          [Match]
+          Name=wlan1
 
-    - name: Enable systemd network interfaces for wlan0
+          [Network]
+          Address=192.168.50.1/24
+          DHCPServer=yes
+
+    - name: Configure systemd-networkd for wlan0 (home Wi-Fi)
       copy:
         dest: /etc/systemd/network/10-wlan0.network
         content: |
+          [Match]
+          Name=wlan0
+
           [Network]
-          DHCP=yes
+          DHCP=ipv4
 
     - name: Restart systemd-networkd to apply changes
       systemd:
