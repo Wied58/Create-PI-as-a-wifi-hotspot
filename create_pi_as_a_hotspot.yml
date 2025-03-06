@@ -1,106 +1,105 @@
 ---
-- name: Configure Raspberry Pi as Hotspot
-  hosts: localhost
-  become: true
+- name: Set up Wi-Fi hotspot on Raspberry Pi
+  hosts: raspberrypi
+  become: yes
   tasks:
-
-    # Step 1: Ensure wlan1 is configured with a static IP
-    - name: Ensure wlan1 is configured with a static IP
-      ansible.builtin.copy:
-        dest: /etc/network/interfaces.d/wlan1
-        content: |
-          auto wlan1
-          iface wlan1 inet static
-              address 192.168.50.1
-              netmask 255.255.255.0
-        owner: root
-        group: root
-        mode: '0644'
-
-    # Ensure network tools are installed
-    - name: Ensure network tools are installed
-      ansible.builtin.package:
-        name: ifupdown
+    - name: Install necessary packages
+      apt:
+        name:
+          - dnsmasq
+          - hostapd
+          - iptables
+          - iptables-persistent
         state: present
+        update_cache: yes
 
-    # Step 2: Configure hostapd for access point mode
-    - name: Ensure hostapd is installed
-      ansible.builtin.package:
-        name: hostapd
+    - name: Enable IP forwarding
+      sysctl:
+        name: net.ipv4.ip_forward
+        value: "1"
         state: present
+        reload: yes
 
-    - name: Copy hostapd configuration
-      ansible.builtin.copy:
-        dest: /etc/hostapd/hostapd.conf
-        content: |
-          # Example hostapd configuration
-          interface=wlan1
-          driver=nl80211
-          ssid=MyHotspot
-          hw_mode=g
-          channel=7
-          wpa=2
-          wpa_passphrase=yourpassword
-          auth_algs=1
-          ignore_broadcast_ssid=0
+    - name: Set up iptables for NAT (internet sharing from wlan0 to wlan1)
+      command: iptables -t nat -A POSTROUTING -o wlan0 -j MASQUERADE
 
-    - name: Enable and start hostapd service
-      ansible.builtin.systemd:
-        name: hostapd
-        enabled: true
-        state: started
+    - name: Allow traffic forwarding from wlan1 to wlan0
+      command: iptables -A FORWARD -i wlan1 -o wlan0 -j ACCEPT
 
-    # Step 3: Configure dnsmasq for DHCP and DNS
-    - name: Install dnsmasq
-      ansible.builtin.package:
-        name: dnsmasq
-        state: present
+    - name: Save iptables rules
+      shell: iptables-save > /etc/iptables/rules.v4
 
-    - name: Copy dnsmasq configuration
-      ansible.builtin.copy:
+    - name: Configure dnsmasq for DHCP
+      copy:
         dest: /etc/dnsmasq.conf
         content: |
           interface=wlan1
-          dhcp-range=192.168.50.100,192.168.50.200,255.255.255.0,12h
-          dhcp-option=3,192.168.50.1  # Gateway IP
-          dhcp-option=6,8.8.8.8,8.8.4.4  # DNS Servers
+          dhcp-range=192.168.50.10,192.168.50.50,12h
+          dhcp-option=3,192.168.50.1
+          dhcp-option=6,8.8.8.8
+          address=/test/192.168.50.1
 
-    - name: Enable and start dnsmasq service
-      ansible.builtin.systemd:
+    - name: Enable and start dnsmasq
+      systemd:
         name: dnsmasq
-        enabled: true
+        enabled: yes
         state: started
 
-    # Step 4: Ensure iptables is configured for NAT
-    - name: Ensure iptables is installed
-      ansible.builtin.package:
-        name: iptables
-        state: present
-
-    - name: Set up iptables for NAT
-      ansible.builtin.command:
-        cmd: iptables -t nat -A POSTROUTING -o wlan0 -j MASQUERADE
-        creates: /etc/iptables.rules  # Ensures idempotence
-
-    - name: Save iptables rules
-      ansible.builtin.shell:
-        cmd: iptables-save | tee /etc/iptables.rules
-
-    - name: Ensure iptables rules are loaded on boot
-      ansible.builtin.copy:
-        dest: /etc/network/if-up.d/iptables
+    - name: Configure hostapd for access point
+      copy:
+        dest: /etc/hostapd/hostapd.conf
         content: |
-          #!/bin/sh
-          iptables-restore < /etc/iptables.rules
-        mode: '0755'
+          interface=wlan1
+          driver=nl80211
+          ssid=Pi_Hotspot
+          hw_mode=g
+          channel=7
+          macaddr_acl=0
+          auth_algs=1
+          wpa=2
+          wpa_passphrase=raspberry
+          wpa_key_mgmt=WPA-PSK
+          ieee80211n=1
+          country=US
 
-    - name: Restart networking service to apply changes
-      ansible.builtin.systemd:
-        name: networking
-        state: restarted
+    - name: Configure hostapd default config
+      copy:
+        dest: /etc/default/hostapd
+        content: |
+          DAEMON_CONF="/etc/hostapd/hostapd.conf"
 
-    - name: Restart hostapd service
-      ansible.builtin.systemd:
+    - name: Unmask hostapd
+      command: systemctl unmask hostapd
+
+    - name: Enable and start hostapd
+      systemd:
         name: hostapd
+        enabled: yes
+        state: started
+
+    - name: Configure systemd-networkd for wlan1 (hotspot)
+      copy:
+        dest: /etc/systemd/network/10-wlan1.network
+        content: |
+          [Match]
+          Name=wlan1
+
+          [Network]
+          Address=192.168.50.1/24
+          DHCPServer=yes
+
+    - name: Configure systemd-networkd for wlan0 (home Wi-Fi)
+      copy:
+        dest: /etc/systemd/network/10-wlan0.network
+        content: |
+          [Match]
+          Name=wlan0
+
+          [Network]
+          DHCP=ipv4
+
+    - name: Restart systemd-networkd to apply changes
+      systemd:
+        name: systemd-networkd
         state: restarted
 
