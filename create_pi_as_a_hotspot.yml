@@ -1,76 +1,23 @@
 ---
-- name: Set up Wi-Fi hotspot on Raspberry Pi
+- name: Setup Raspberry Pi Wi-Fi Hotspot
   hosts: localhost
   become: yes
+
   tasks:
-    - name: Install necessary packages
+
+    - name: Install required packages
       apt:
         name:
-          - dnsmasq
           - hostapd
+          - dnsmasq
           - iptables
-          - iptables-persistent
+          - network-manager
         state: present
         update_cache: yes
 
-    - name: Enable IP forwarding
-      sysctl:
-        name: net.ipv4.ip_forward
-        value: "1"
-        state: present
-        reload: yes
-
-    - name: Set up iptables for NAT (internet sharing from wlan0 to wlan1)
-      command: iptables -t nat -A POSTROUTING -o wlan0 -j MASQUERADE
-
-    - name: Allow traffic forwarding from wlan1 to wlan0
-      command: iptables -A FORWARD -i wlan1 -o wlan0 -j ACCEPT
-
-    - name: Save iptables rules
-      shell: iptables-save > /etc/iptables/rules.v4
-
-    - name: Configure dnsmasq for DHCP
-      copy:
-        dest: /etc/dnsmasq.conf
-        content: |
-          interface=wlan1
-          dhcp-range=192.168.50.10,192.168.50.50,12h
-          dhcp-option=3,192.168.50.1
-          dhcp-option=6,8.8.8.8
-          address=/test/192.168.50.1
-
-    - name: Enable and start dnsmasq
-      systemd:
-        name: dnsmasq
-        enabled: yes
-        state: started
-
-    - name: Configure hostapd for access point
-      copy:
-        dest: /etc/hostapd/hostapd.conf
-        content: |
-          interface=wlan1
-          driver=nl80211
-          ssid=Pi_Hotspot
-          hw_mode=g
-          channel=7
-          macaddr_acl=0
-          auth_algs=1
-          wpa=2
-          wpa_passphrase=raspberry
-          wpa_key_mgmt=WPA-PSK
-          rsn_pairwise=CCMP
-          ieee80211n=1
-          country_code=US
-
-    - name: Configure hostapd default config
-      copy:
-        dest: /etc/default/hostapd
-        content: |
-          DAEMON_CONF="/etc/hostapd/hostapd.conf"
-
-    - name: Unmask hostapd
+    - name: Ensure hostapd is unmasked and enabled
       command: systemctl unmask hostapd
+      notify: Restart hostapd
 
     - name: Enable and start hostapd
       systemd:
@@ -78,29 +25,48 @@
         enabled: yes
         state: started
 
-    - name: Configure systemd-networkd for wlan1 (hotspot)
+    - name: Configure wlan1 IP with NetworkManager
       copy:
-        dest: /etc/systemd/network/10-wlan1.network
+        dest: /etc/NetworkManager/system-connections/wlan1.nmconnection
         content: |
-          [Match]
-          Name=wlan1
+          [connection]
+          id=wlan1
+          type=wifi
+          interface-name=wlan1
+          autoconnect=true
 
-          [Network]
-          Address=192.168.50.1/24
-          DHCPServer=yes
+          [ipv4]
+          method=manual
+          addresses=192.168.50.1/24
+      notify: Restart NetworkManager
 
-    - name: Configure systemd-networkd for wlan0 (home Wi-Fi)
-      copy:
-        dest: /etc/systemd/network/10-wlan0.network
-        content: |
-          [Match]
-          Name=wlan0
-
-          [Network]
-          DHCP=ipv4
-
-    - name: Restart systemd-networkd to apply changes
+    - name: Restart NetworkManager to apply settings
       systemd:
-        name: systemd-networkd
+        name: NetworkManager
         state: restarted
+
+    - name: Set up NAT for internet sharing
+      shell: |
+        iptables -t nat -A POSTROUTING -o wlan0 -j MASQUERADE
+      notify: Save iptables rules
+
+    - name: Ensure IP forwarding is enabled
+      sysctl:
+        name: net.ipv4.ip_forward
+        value: '1'
+        state: present
+
+  handlers:
+    - name: Restart hostapd
+      systemd:
+        name: hostapd
+        state: restarted
+
+    - name: Restart NetworkManager
+      systemd:
+        name: NetworkManager
+        state: restarted
+
+    - name: Save iptables rules
+      shell: iptables-save > /etc/iptables/rules.v4
 
