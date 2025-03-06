@@ -59,8 +59,9 @@
           wpa=2
           wpa_passphrase=raspberry
           wpa_key_mgmt=WPA-PSK
+          rsn_pairwise=CCMP
           ieee80211n=1
-          country=US
+          country_code=US
 
     - name: Configure hostapd default config
       copy:
