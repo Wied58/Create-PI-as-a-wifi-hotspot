@@ -83,7 +83,7 @@
         creates: /etc/iptables.rules  # Ensures idempotence
 
     - name: Save iptables rules
-      ansible.builtin.command:
+        ansible.builtin.shell:
         cmd: iptables-save | tee /etc/iptables.rules
 
     - name: Ensure iptables rules are loaded on boot
