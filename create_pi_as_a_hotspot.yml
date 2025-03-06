@@ -1,6 +1,6 @@
 ---
 - name: Set up Wi-Fi hotspot on Raspberry Pi
-  hosts: raspberrypi
+  hosts: localhost
   become: yes
   tasks:
     - name: Install necessary packages
