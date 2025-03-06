@@ -78,10 +78,11 @@
           macaddr_acl=0
           auth_algs=1
           wpa=2
-          wpa_passphrase=raspberry
+          wpa_passphrase=Hotspot1234
           wpa_key_mgmt=WPA-PSK
           ieee80211n=1
           country_code=US
+          wpa_pairwise=CCMP
 
     - name: Configure hostapd default config
       copy:
