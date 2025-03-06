@@ -1,72 +1,106 @@
 ---
-- name: Setup Raspberry Pi Wi-Fi Hotspot
+- name: Configure Raspberry Pi as Hotspot
   hosts: localhost
-  become: yes
-
+  become: true
   tasks:
 
-    - name: Install required packages
-      apt:
-        name:
-          - hostapd
-          - dnsmasq
-          - iptables
-          - network-manager
+    # Step 1: Ensure wlan1 is configured with a static IP
+    - name: Ensure wlan1 is configured with a static IP
+      ansible.builtin.copy:
+        dest: /etc/network/interfaces.d/wlan1
+        content: |
+          auto wlan1
+          iface wlan1 inet static
+              address 192.168.50.1
+              netmask 255.255.255.0
+        owner: root
+        group: root
+        mode: '0644'
+
+    # Ensure network tools are installed
+    - name: Ensure network tools are installed
+      ansible.builtin.package:
+        name: ifupdown
         state: present
-        update_cache: yes
 
-    - name: Ensure hostapd is unmasked and enabled
-      command: systemctl unmask hostapd
-      notify: Restart hostapd
-
-    - name: Enable and start hostapd
-      systemd:
+    # Step 2: Configure hostapd for access point mode
+    - name: Ensure hostapd is installed
+      ansible.builtin.package:
         name: hostapd
-        enabled: yes
+        state: present
+
+    - name: Copy hostapd configuration
+      ansible.builtin.copy:
+        dest: /etc/hostapd/hostapd.conf
+        content: |
+          # Example hostapd configuration
+          interface=wlan1
+          driver=nl80211
+          ssid=MyHotspot
+          hw_mode=g
+          channel=7
+          wpa=2
+          wpa_passphrase=yourpassword
+          auth_algs=1
+          ignore_broadcast_ssid=0
+
+    - name: Enable and start hostapd service
+      ansible.builtin.systemd:
+        name: hostapd
+        enabled: true
         state: started
 
-    - name: Configure wlan1 IP with NetworkManager
-      copy:
-        dest: /etc/NetworkManager/system-connections/wlan1.nmconnection
-        content: |
-          [connection]
-          id=wlan1
-          type=wifi
-          interface-name=wlan1
-          autoconnect=true
-
-          [ipv4]
-          method=manual
-          addresses=192.168.50.1/24
-      notify: Restart NetworkManager
-
-    - name: Restart NetworkManager to apply settings
-      systemd:
-        name: NetworkManager
-        state: restarted
-
-    - name: Set up NAT for internet sharing
-      shell: |
-        iptables -t nat -A POSTROUTING -o wlan0 -j MASQUERADE
-      notify: Save iptables rules
-
-    - name: Ensure IP forwarding is enabled
-      sysctl:
-        name: net.ipv4.ip_forward
-        value: '1'
+    # Step 3: Configure dnsmasq for DHCP and DNS
+    - name: Install dnsmasq
+      ansible.builtin.package:
+        name: dnsmasq
         state: present
 
-  handlers:
-    - name: Restart hostapd
-      systemd:
-        name: hostapd
-        state: restarted
+    - name: Copy dnsmasq configuration
+      ansible.builtin.copy:
+        dest: /etc/dnsmasq.conf
+        content: |
+          interface=wlan1
+          dhcp-range=192.168.50.100,192.168.50.200,255.255.255.0,12h
+          dhcp-option=3,192.168.50.1  # Gateway IP
+          dhcp-option=6,8.8.8.8,8.8.4.4  # DNS Servers
 
-    - name: Restart NetworkManager
-      systemd:
-        name: NetworkManager
-        state: restarted
+    - name: Enable and start dnsmasq service
+      ansible.builtin.systemd:
+        name: dnsmasq
+        enabled: true
+        state: started
+
+    # Step 4: Ensure iptables is configured for NAT
+    - name: Ensure iptables is installed
+      ansible.builtin.package:
+        name: iptables
+        state: present
+
+    - name: Set up iptables for NAT
+      ansible.builtin.command:
+        cmd: iptables -t nat -A POSTROUTING -o wlan0 -j MASQUERADE
+        creates: /etc/iptables.rules  # Ensures idempotence
 
     - name: Save iptables rules
-      shell: iptables-save > /etc/iptables/rules.v4
+      ansible.builtin.command:
+        cmd: iptables-save > /etc/iptables.rules
+
+    - name: Ensure iptables rules are loaded on boot
+      ansible.builtin.copy:
+        dest: /etc/network/if-up.d/iptables
+        content: |
+          #!/bin/sh
+          iptables-restore < /etc/iptables.rules
+        mode: '0755'
+
+    - name: Restart networking service to apply changes
+      ansible.builtin.systemd:
+        name: networking
+        state: restarted
+
+    - name: Restart hostapd service
+      ansible.builtin.systemd:
+        name: hostapd
+        state: restarted
 
