@@ -10,8 +10,21 @@
           - hostapd
           - iptables
           - iptables-persistent
+          - network-manager
         state: present
         update_cache: yes
+
+    - name: Prevent NetworkManager from managing wlan1
+      copy:
+        dest: /etc/NetworkManager/conf.d/unmanaged-wlan1.conf
+        content: |
+          [keyfile]
+          unmanaged-devices=interface-name:wlan1
+
+    - name: Restart NetworkManager
+      systemd:
+        name: NetworkManager
+        state: restarted
 
     - name: Enable IP forwarding
       sysctl:
@@ -21,13 +34,21 @@
         reload: yes
 
     - name: Set up iptables for NAT (internet sharing from wlan0 to wlan1)
-      command: iptables -t nat -A POSTROUTING -o wlan0 -j MASQUERADE
+      iptables:
+        table: nat
+        chain: POSTROUTING
+        jump: MASQUERADE
+        out_interface: wlan0
 
     - name: Allow traffic forwarding from wlan1 to wlan0
-      command: iptables -A FORWARD -i wlan1 -o wlan0 -j ACCEPT
+      iptables:
+        chain: FORWARD
+        in_interface: wlan1
+        out_interface: wlan0
+        jump: ACCEPT
 
     - name: Save iptables rules
-      shell: iptables-save > /etc/iptables/rules.v4
+      command: netfilter-persistent save
 
     - name: Configure dnsmasq for DHCP
       copy:
@@ -43,7 +64,7 @@
       systemd:
         name: dnsmasq
         enabled: yes
-        state: started
+        state: restarted
 
     - name: Configure hostapd for access point
       copy:
@@ -61,7 +82,6 @@
           wpa_key_mgmt=WPA-PSK
           ieee80211n=1
           country_code=US
-          wpa_pairwise=CCMP
 
     - name: Configure hostapd default config
       copy:
@@ -69,14 +89,12 @@
         content: |
           DAEMON_CONF="/etc/hostapd/hostapd.conf"
 
-    - name: Unmask hostapd
-      command: systemctl unmask hostapd
-
-    - name: Enable and start hostapd
+    - name: Unmask and enable hostapd
       systemd:
         name: hostapd
         enabled: yes
-        state: started
+        masked: no
+        state: restarted
 
     - name: Configure systemd-networkd for wlan1 (hotspot)
       copy:
@@ -89,18 +107,11 @@
           Address=192.168.50.1/24
           DHCPServer=yes
 
-    - name: Configure systemd-networkd for wlan0 (home Wi-Fi)
-      copy:
-        dest: /etc/systemd/network/10-wlan0.network
-        content: |
-          [Match]
-          Name=wlan0
-
-          [Network]
-          DHCP=ipv4
-
     - name: Restart systemd-networkd to apply changes
       systemd:
         name: systemd-networkd
         state: restarted
+
+    - name: Bring up wlan1 manually
+      command: ip link set wlan1 up
 
