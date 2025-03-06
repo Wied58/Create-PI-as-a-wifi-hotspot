@@ -68,6 +68,9 @@
         content: |
           DAEMON_CONF="/etc/hostapd/hostapd.conf"
 
+    - name: Unmask hostapd
+      command: systemctl unmask hostapd
+
     - name: Enable and start hostapd
       systemd:
         name: hostapd
