@@ -84,7 +84,7 @@
 
     - name: Save iptables rules
       ansible.builtin.command:
-        cmd: iptables-save > /etc/iptables.rules
+        cmd: iptables-save | tee /etc/iptables.rules
 
     - name: Ensure iptables rules are loaded on boot
       ansible.builtin.copy:
